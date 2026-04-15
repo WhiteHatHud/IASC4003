@@ -167,7 +167,7 @@ public class ThreePrisonersDilemma {
 	 (strategies) in between matches. When you add your own strategy,
 	 you will need to add a new entry to makePlayer, and change numPlayers.*/
 	
-	int numPlayers = 8;
+	int numPlayers = 7;
 	Player makePlayer(int which) {
 		switch (which) {
 		case 0: return new NicePlayer();
@@ -177,86 +177,106 @@ public class ThreePrisonersDilemma {
 		case 4: return new FreakyPlayer();
 		case 5: return new T4TPlayer();
 		case 6: return new BinMuhammadTaufiq_Hudzaifah_Player();
-		case 7: return new Compare_Player();
 		}
 		throw new RuntimeException("Bad argument passed to makePlayer");
 	}
 	
 	/* Finally, the remaining code actually runs the tournament. */
-
+	
 	public static void main (String[] args) {
-		int TOURNAMENT_RUNS = 10000;
 		ThreePrisonersDilemma instance = new ThreePrisonersDilemma();
-
-		// Accumulate rank positions over all runs (lower = better)
-		int[] rankSum = new int[instance.numPlayers];
-
-		for (int run = 0; run < TOURNAMENT_RUNS; run++) {
-			int[] sortedOrder = instance.runTournament(false);
-			for (int rank = 0; rank < instance.numPlayers; rank++) {
-				rankSum[sortedOrder[rank]] += (rank + 1); // rank 1 = best
-			}
-		}
-
-		// Print average rankings
-		System.out.println("\n=== Average Rankings over " + TOURNAMENT_RUNS + " tournaments ===");
-		// Build sorted display by average rank
-		double[] avgRank = new double[instance.numPlayers];
-		for (int i = 0; i < instance.numPlayers; i++)
-			avgRank[i] = (double) rankSum[i] / TOURNAMENT_RUNS;
-
-		// Simple insertion sort for display
-		Integer[] order = new Integer[instance.numPlayers];
-		for (int i = 0; i < instance.numPlayers; i++) order[i] = i;
-		java.util.Arrays.sort(order, (a, b) -> Double.compare(avgRank[a], avgRank[b]));
-
-		for (int i = 0; i < instance.numPlayers; i++) {
-			int p = order[i];
-			System.out.printf("%d. %-45s avg rank: %.4f%n",
-				(i+1), instance.makePlayer(p).name(), avgRank[p]);
-		}
+		instance.runTournament();
 	}
-
-	int[] runTournament(boolean verbose) {
+	
+	boolean verbose = true; // set verbose = false if you get too much text output
+	
+	void runTournament() {
 		float[] totalScore = new float[numPlayers];
 
+		// This loop plays each triple of players against each other.
+		// Note that we include duplicates: two copies of your strategy will play once
+		// against each other strategy, and three copies of your strategy will play once.
+
 		for (int i=0; i<numPlayers; i++) for (int j=i; j<numPlayers; j++) for (int k=j; k<numPlayers; k++) {
-			Player A = makePlayer(i);
+
+			Player A = makePlayer(i); // Create a fresh copy of each player
 			Player B = makePlayer(j);
 			Player C = makePlayer(k);
-			int rounds = 90 + (int)Math.rint(20 * Math.random());
-			float[] matchResults = scoresOfMatch(A, B, C, rounds);
+			int rounds = 90 + (int)Math.rint(20 * Math.random()); // Between 90 and 110 rounds
+			float[] matchResults = scoresOfMatch(A, B, C, rounds); // Run match
 			totalScore[i] = totalScore[i] + matchResults[0];
 			totalScore[j] = totalScore[j] + matchResults[1];
 			totalScore[k] = totalScore[k] + matchResults[2];
 			if (verbose)
 				System.out.println(A.name() + " scored " + matchResults[0] +
-						" points, " + B.name() + " scored " + matchResults[1] +
+						" points, " + B.name() + " scored " + matchResults[1] + 
 						" points, and " + C.name() + " scored " + matchResults[2] + " points.");
 		}
 		int[] sortedOrder = new int[numPlayers];
+		// This loop sorts the players by their score.
 		for (int i=0; i<numPlayers; i++) {
 			int j=i-1;
 			for (; j>=0; j--) {
-				if (totalScore[i] > totalScore[sortedOrder[j]])
+				if (totalScore[i] > totalScore[sortedOrder[j]]) 
 					sortedOrder[j+1] = sortedOrder[j];
 				else break;
 			}
 			sortedOrder[j+1] = i;
 		}
-		return sortedOrder;
+		
+		// Finally, print out the sorted results.
+		if (verbose) System.out.println();
+		System.out.println("Tournament Results");
+		for (int i=0; i<numPlayers; i++) 
+			System.out.println(makePlayer(sortedOrder[i]).name() + ": " 
+				+ totalScore[sortedOrder[i]] + " points.");
+		
 	} // end of runTournament()
 	
 	class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
 
-		int r;
-		int[] myHist, opp1Hist, opp2Hist;
-		int myScore = 0, opp1Score = 0, opp2Score = 0;
-		int opp1Coop = 0, opp2Coop = 0;
+		/**
+		 * Strategy: Adaptive 4-Rule Agent
+		 *
+		 * Rule 0 (overarching): Be trustworthy AND unpredictable.
+		 *   Execute intended action 99% of the time, opposite 1% of the time.
+		 *
+		 * Rule 1: Protect myself.
+		 *   After n > 100, if BOTH opponents' cooperation probability is below
+		 *   STRICT_THRESHOLD (0.750), defect. Only fires late so early noise
+		 *   does not trigger premature punishment.
+		 *
+		 * Rule 2: Cooperate in a cooperative environment.
+		 *   If BOTH opponents cooperated last round AND both have cooperation
+		 *   probability above LENIENT_THRESHOLD (0.705), cooperate.
+		 *   This is the primary path for the majority of rounds.
+		 *
+		 * Rule 3: Sore Loser fallback.
+		 *   When Rules 1 and 2 do not apply, use cumulative score as signal.
+		 *   If winning or tied: cooperate (no need to act).
+		 *   If losing: defect (stop the gap from widening).
+		 */
 
+		// Previous round index
+		int r;
+
+		// History references — updated each round for use in helper methods
+		int[] myHist, opp1Hist, opp2Hist;
+
+		// Cumulative scores — tracked manually using payoff matrix each round
+		int myScore = 0, opp1Score = 0, opp2Score = 0;
+
+		// Running cooperation counts for each opponent (full history, not rolling)
+		int opp1Coop = 0;
+		int opp2Coop = 0;
+
+		// Lenient threshold — used in Rule 2 to reward broadly cooperative opponents
 		final double LENIENT_THRESHOLD = 0.705;
+
+		// Strict threshold — used in Rule 1 only after n > 100 for reliable stats
 		final double STRICT_THRESHOLD = 0.750;
 
+		// Local copy of payoff matrix for score tracking in helper methods
 		int[][][] payoff = {
 			{{6, 3}, {3, 0}},
 			{{8, 5}, {5, 2}}
@@ -264,121 +284,96 @@ public class ThreePrisonersDilemma {
 
 		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
 
+			// Always cooperate on the first round — establish goodwill
 			if (n == 0) return 0;
 
+			// Update round index and history references for helper methods
 			this.r        = n - 1;
 			this.myHist   = myHistory;
 			this.opp1Hist = oppHistory1;
 			this.opp2Hist = oppHistory2;
 
+			// Capture last actions for all three players
 			int myLA   = myHistory[r];
 			int opp1LA = oppHistory1[r];
 			int opp2LA = oppHistory2[r];
 
+			// Update cumulative scores using payoff matrix
 			this.myScore   += payoff[myLA][opp1LA][opp2LA];
 			this.opp1Score += payoff[opp1LA][opp2LA][myLA];
 			this.opp2Score += payoff[opp2LA][opp1LA][myLA];
 
+			// Update cooperation counters (getOppAction returns 1 if they cooperated)
 			opp1Coop += getOppAction(opp1Hist[r]);
 			opp2Coop += getOppAction(opp2Hist[r]);
 
+			// Calculate cooperation probabilities over full history
 			double opp1CoopProb = (double) opp1Coop / opp1Hist.length;
 			double opp2CoopProb = (double) opp2Coop / opp2Hist.length;
 
-			// Rule 1a: if either opponent never cooperated after 5 rounds — defect
-			if (n > 5 && (opp1Coop == 0 || opp2Coop == 0)) return 1;
-			// Rule 1b: after 5 rounds, if both cooperate less than 50% — defect
-			if ((n > 5)
+			// ----------------------------------------------------------------
+			// EARLY NASTY DETECTION
+			// After 10 rounds, if neither opponent has cooperated even once,
+			// they are pure defectors — no need to wait until round 100.
+			// ----------------------------------------------------------------
+			if (n > 10 && opp1Coop == 0 && opp2Coop == 0) {
+				return 1;
+			}
+
+			// ----------------------------------------------------------------
+			// RULE 1 — PROTECT MYSELF
+			// After 100 rounds the cooperation probability is statistically
+			// reliable. If both opponents cooperate less than 75% of the time,
+			// they are confirmed as predominantly nasty — defect to cut losses.
+			// ----------------------------------------------------------------
+			if ((n > 100)
 					&& (opp1CoopProb < STRICT_THRESHOLD)
 					&& (opp2CoopProb < STRICT_THRESHOLD)) {
 				return applyNoise(1, 99);
 			}
 
-			// Rule 2: both cooperated last round and have cooperative histories — cooperate
+			// ----------------------------------------------------------------
+			// ASYMMETRIC OPPONENT HANDLING
+			// One opponent is confirmed nasty, the other is cooperative.
+			// Cooperate to preserve the good relationship — the nasty opponent
+			// hurts us regardless of our action, so don't sacrifice the good one.
+			// ----------------------------------------------------------------
+			boolean opp1Nasty = (n > 100) && (opp1CoopProb < STRICT_THRESHOLD);
+			boolean opp2Nasty = (n > 100) && (opp2CoopProb < STRICT_THRESHOLD);
+			if ((opp1Nasty && opp2CoopProb > LENIENT_THRESHOLD)
+					|| (opp2Nasty && opp1CoopProb > LENIENT_THRESHOLD)) {
+				return applyNoise(0, 99);
+			}
+
+			// ----------------------------------------------------------------
+			// RULE 2 — COOPERATE IN A COOPERATIVE ENVIRONMENT
+			// Both cooperated last round AND both have cooperative histories.
+			// Sustain mutual cooperation (6 pts/round is the optimal equilibrium).
+			// ----------------------------------------------------------------
 			if ((opp1LA + opp2LA == 0)
 					&& (opp1CoopProb > LENIENT_THRESHOLD)
 					&& (opp2CoopProb > LENIENT_THRESHOLD)) {
 				return applyNoise(0, 99);
 			}
 
-			// Rule 3: SoreLoser — cooperate if winning or tied, defect if losing
-			if (myScore >= opp1Score && myScore >= opp2Score) return 0;
-			return 1;
+			// ----------------------------------------------------------------
+			// RULE 3 — SORE LOSER FALLBACK (proportional)
+			// Use the size of the score gap, not just win/lose:
+			//   Gap > 50  → defect (hemorrhaging, must act)
+			//   Gap < 10  → cooperate (trivial gap, not worth breaking trust)
+			//   Otherwise → defect (meaningful deficit, stop the bleeding)
+			// ----------------------------------------------------------------
+			return handleAmbiguousCase();
 		}
 
+		/**
+		 * Rule 0: Introduces 1% noise so the agent is unpredictable.
+		 * Executes intendedAction (pct)% of the time, opposite (1-pct)%.
+		 */
 		private int applyNoise(int intendedAction, int pct) {
 			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
 				put(intendedAction, pct);
 				put(getOppAction(intendedAction), 1 - pct);
-			}};
-			LinkedList<Integer> list = new LinkedList<>();
-			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
-				for (int i = 0; i < entry.getValue(); i++) list.add(entry.getKey());
-			}
-			Collections.shuffle(list);
-			return list.pop();
-		}
-
-		private int getOppAction(int action) {
-			if (action == 1) return 0;
-			return 1;
-		}
-	}
-
-	class Compare_Player extends Player {
-
-		int[][][] payoff = {
-				{{6, 3},
-				{3, 0}},
-				{{8, 5},
-				{5, 2}}};
-
-		int r;
-		int[] myHist, opp1Hist, opp2Hist;
-		int myScore=0, opp1Score=0, opp2Score=0;
-		int opponent1Coop = 0; int opponent2Coop = 0;
-
-		final double LENIENT_THRESHOLD = 0.705;
-		final double STRICT_THRESHOLD = 0.750;
-
-		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
-			if (n==0) return 0;
-
-			this.r = n - 1;
-			this.myHist = myHistory;
-			this.opp1Hist = oppHistory1;
-			this.opp2Hist = oppHistory2;
-
-			int myLA = myHistory[r];
-			int opp1LA = oppHistory1[r];
-			int opp2LA = oppHistory2[r];
-
-			this.myScore += payoff[myLA][opp1LA][opp2LA];
-			this.opp1Score += payoff[opp1LA][opp2LA][myLA];
-			this.opp2Score += payoff[opp2LA][opp1LA][myLA];
-
-			if (n>0) {
-				opponent1Coop += oppAction(opp1Hist[r]);
-				opponent2Coop += oppAction(opp2Hist[r]);
-			}
-			double opponent1Coop_prob = opponent1Coop / opp1Hist.length;
-			double opponent2Coop_prob = opponent2Coop / opp2Hist.length;
-
-			if ((n>100) && (opponent1Coop_prob<STRICT_THRESHOLD && opponent2Coop_prob<STRICT_THRESHOLD)) {
-				return actionWithNoise(1, 99);
-			}
-
-			if ((opp1LA+opp2LA ==0)&&(opponent1Coop_prob>LENIENT_THRESHOLD && opponent2Coop_prob>LENIENT_THRESHOLD)) {
-				return actionWithNoise(0, 99);
-			} else {
-				return SoreLoser();
-			}
-		}
-
-		private int actionWithNoise(int intendedAction, int percent_chance_for_intended_action) {
-			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
-				put(intendedAction, percent_chance_for_intended_action);
-				put(oppAction(intendedAction), 1-percent_chance_for_intended_action);
 			}};
 			LinkedList<Integer> list = new LinkedList<>();
 			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
@@ -390,12 +385,23 @@ public class ThreePrisonersDilemma {
 			return list.pop();
 		}
 
-		private int SoreLoser() {
-			if (myScore>=opp1Score && myScore>=opp2Score) return 0;
-			return 1;
+		/**
+		 * Rule 3 (proportional): Cooperate if winning or gap is trivial,
+		 * defect only when the deficit is meaningful.
+		 */
+		private int handleAmbiguousCase() {
+			int maxOpponentScore = Math.max(opp1Score, opp2Score);
+			int gap = maxOpponentScore - myScore;
+			if (gap < 10) return 0;  // winning or close — cooperate
+			if (gap > 50) return 1;  // far behind — defect hard
+			return 1;                // meaningful deficit — defect
 		}
 
-		private int oppAction(int action) {
+		/**
+		 * Returns the opposite action (0→1, 1→0).
+		 * Also used to convert a cooperation move into a +1 cooperation count.
+		 */
+		private int getOppAction(int action) {
 			if (action == 1) return 0;
 			return 1;
 		}

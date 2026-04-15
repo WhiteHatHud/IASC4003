@@ -1,7 +1,4 @@
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
+import java.util.*;
 
 public class ThreePrisonersDilemma {
 	
@@ -120,15 +117,81 @@ public class ThreePrisonersDilemma {
 	}
 
 	class T4TPlayer extends Player {
-		//Picks a random opponent at each play, 
-		//and uses the 'tit-for-tat' strategy against them 
+		//Picks a random opponent at each play,
+		//and uses the 'tit-for-tat' strategy against them
 		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
 			if (n==0) return 0; //cooperate by default
 			if (Math.random() < 0.5)
 				return oppHistory1[n-1];
 			else
 				return oppHistory2[n-1];
-		}	
+		}
+	}
+
+	class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
+
+		int[][][] payoff = {{{6,3},{3,0}},{{8,5},{5,2}}};
+		int r; int[] myHist, opp1Hist, opp2Hist;
+		int myScore=0, opp1Score=0, opp2Score=0;
+		int opp1Coop=0, opp2Coop=0;
+		final double LENIENT_THRESHOLD = 0.705;
+		final double STRICT_THRESHOLD = 0.500;
+
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n==0) return 0;
+			this.r=n-1; this.myHist=myHistory; this.opp1Hist=oppHistory1; this.opp2Hist=oppHistory2;
+			int myLA=myHistory[r], opp1LA=oppHistory1[r], opp2LA=oppHistory2[r];
+			this.myScore+=payoff[myLA][opp1LA][opp2LA];
+			this.opp1Score+=payoff[opp1LA][opp2LA][myLA];
+			this.opp2Score+=payoff[opp2LA][opp1LA][myLA];
+			opp1Coop+=getOppAction(opp1Hist[r]); opp2Coop+=getOppAction(opp2Hist[r]);
+			double opp1CoopProb=(double)opp1Coop/opp1Hist.length;
+			double opp2CoopProb=(double)opp2Coop/opp2Hist.length;
+			if (n>5&&(opp1Coop==0||opp2Coop==0)) return 1;
+			if ((n>5)&&(opp1CoopProb<STRICT_THRESHOLD)&&(opp2CoopProb<STRICT_THRESHOLD)) return applyNoise(1,99);
+			if ((opp1LA+opp2LA==0)&&(opp1CoopProb>LENIENT_THRESHOLD)&&(opp2CoopProb>LENIENT_THRESHOLD)) return applyNoise(0,99);
+			if (myScore>=opp1Score&&myScore>=opp2Score) return 0;
+			return 1;
+		}
+		private int applyNoise(int intended, int pct) {
+			Map<Integer,Integer> map=new HashMap<Integer,Integer>(){{put(intended,pct);put(getOppAction(intended),1-pct);}};
+			LinkedList<Integer> list=new LinkedList<>();
+			for (Map.Entry<Integer,Integer> e:map.entrySet()) for (int i=0;i<e.getValue();i++) list.add(e.getKey());
+			Collections.shuffle(list); return list.pop();
+		}
+		private int getOppAction(int a){return a==1?0:1;}
+	}
+
+	class WinStayLoseShift extends Player {
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n==0) return 0;
+			int r = n-1;
+			int myLA = myHistory[r], o1 = oppHistory1[r], o2 = oppHistory2[r];
+			if (payoff[myLA][o1][o2] >= 5) return myLA;
+			return myLA == 1 ? 0 : 1;
+		}
+	}
+
+	class SoreLoser extends Player {
+		int myScore=0, opp1Score=0, opp2Score=0;
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n==0) return 0;
+			int i = n-1;
+			myScore   += payoff[myHistory[i]][oppHistory1[i]][oppHistory2[i]];
+			opp1Score += payoff[oppHistory1[i]][oppHistory2[i]][myHistory[i]];
+			opp2Score += payoff[oppHistory2[i]][myHistory[i]][oppHistory1[i]];
+			if (myScore >= opp1Score && myScore >= opp2Score) return 0;
+			return 1;
+		}
+	}
+
+	class Trigger extends Player {
+		boolean triggered = false;
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n==0) return 0;
+			if (oppHistory1[n-1] + oppHistory2[n-1] == 2) triggered = true;
+			return triggered ? 1 : 0;
+		}
 	}
 
 	
@@ -167,7 +230,7 @@ public class ThreePrisonersDilemma {
 	 (strategies) in between matches. When you add your own strategy,
 	 you will need to add a new entry to makePlayer, and change numPlayers.*/
 	
-	int numPlayers = 8;
+	int numPlayers = 10;
 	Player makePlayer(int which) {
 		switch (which) {
 		case 0: return new NicePlayer();
@@ -177,47 +240,80 @@ public class ThreePrisonersDilemma {
 		case 4: return new FreakyPlayer();
 		case 5: return new T4TPlayer();
 		case 6: return new BinMuhammadTaufiq_Hudzaifah_Player();
-		case 7: return new Compare_Player();
+		case 7: return new WinStayLoseShift();
+		case 8: return new SoreLoser();
+		case 9: return new Trigger();
 		}
 		throw new RuntimeException("Bad argument passed to makePlayer");
 	}
 	
 	/* Finally, the remaining code actually runs the tournament. */
-
+	
 	public static void main (String[] args) {
 		int TOURNAMENT_RUNS = 10000;
 		ThreePrisonersDilemma instance = new ThreePrisonersDilemma();
 
-		// Accumulate rank positions over all runs (lower = better)
+		String border = "================================================================";
+		String thin   = "----------------------------------------------------------------";
+
+		System.out.println("\n" + border);
+		System.out.println("   THREE PRISONERS DILEMMA — TOURNAMENT SIMULATION");
+		System.out.println("   Players : " + instance.numPlayers);
+		System.out.println("   Runs    : " + TOURNAMENT_RUNS);
+		System.out.println("   Rounds  : 90–110 per match (randomised)");
+		System.out.println(border);
+
 		int[] rankSum = new int[instance.numPlayers];
-
 		for (int run = 0; run < TOURNAMENT_RUNS; run++) {
-			int[] sortedOrder = instance.runTournament(false);
-			for (int rank = 0; rank < instance.numPlayers; rank++) {
-				rankSum[sortedOrder[rank]] += (rank + 1); // rank 1 = best
-			}
+			if (run % 1000 == 0 && run > 0)
+				System.out.printf("   ... completed %d / %d tournaments%n", run, TOURNAMENT_RUNS);
+			int[] sortedOrder = instance.runTournament();
+			for (int rank = 0; rank < instance.numPlayers; rank++)
+				rankSum[sortedOrder[rank]] += (rank + 1);
 		}
+		System.out.printf("   ... completed %d / %d tournaments%n", TOURNAMENT_RUNS, TOURNAMENT_RUNS);
 
-		// Print average rankings
-		System.out.println("\n=== Average Rankings over " + TOURNAMENT_RUNS + " tournaments ===");
-		// Build sorted display by average rank
 		double[] avgRank = new double[instance.numPlayers];
 		for (int i = 0; i < instance.numPlayers; i++)
 			avgRank[i] = (double) rankSum[i] / TOURNAMENT_RUNS;
 
-		// Simple insertion sort for display
 		Integer[] order = new Integer[instance.numPlayers];
 		for (int i = 0; i < instance.numPlayers; i++) order[i] = i;
 		java.util.Arrays.sort(order, (a, b) -> Double.compare(avgRank[a], avgRank[b]));
 
+		// Summed Rankings
+		System.out.println("\n" + border);
+		System.out.println("   SUMMED RANKINGS (lower = better)");
+		System.out.println(border);
+		System.out.printf("   %-5s %-35s %s%n", "Rank", "Player", "Summed Score");
+		System.out.println(thin);
 		for (int i = 0; i < instance.numPlayers; i++) {
 			int p = order[i];
-			System.out.printf("%d. %-45s avg rank: %.4f%n",
-				(i+1), instance.makePlayer(p).name(), avgRank[p]);
+			System.out.printf("   %-5d %-35s %d%n", (i+1), instance.makePlayer(p).name(), rankSum[p]);
 		}
+
+		// Average Rankings
+		System.out.println("\n" + border);
+		System.out.println("   AVERAGE RANKINGS over " + TOURNAMENT_RUNS + " tournaments");
+		System.out.println(border);
+		System.out.printf("   %-5s %-35s %-12s %s%n", "Rank", "Player", "Avg Rank", "Performance");
+		System.out.println(thin);
+		String[] medals = {"1st", "2nd", "3rd"};
+		for (int i = 0; i < instance.numPlayers; i++) {
+			int p = order[i];
+			String medal = i < 3 ? medals[i] : (i+1) + "th";
+			String bar = "";
+			int barLen = (int)((instance.numPlayers - i) * 2.5);
+			for (int b = 0; b < barLen; b++) bar += "#";
+			System.out.printf("   %-5s %-35s %-12.4f [%s]%n",
+				medal, instance.makePlayer(p).name(), avgRank[p], bar);
+		}
+		System.out.println(border);
+		System.out.println("   WINNER: " + instance.makePlayer(order[0]).name());
+		System.out.println(border + "\n");
 	}
 
-	int[] runTournament(boolean verbose) {
+	int[] runTournament() {
 		float[] totalScore = new float[numPlayers];
 
 		for (int i=0; i<numPlayers; i++) for (int j=i; j<numPlayers; j++) for (int k=j; k<numPlayers; k++) {
@@ -229,10 +325,6 @@ public class ThreePrisonersDilemma {
 			totalScore[i] = totalScore[i] + matchResults[0];
 			totalScore[j] = totalScore[j] + matchResults[1];
 			totalScore[k] = totalScore[k] + matchResults[2];
-			if (verbose)
-				System.out.println(A.name() + " scored " + matchResults[0] +
-						" points, " + B.name() + " scored " + matchResults[1] +
-						" points, and " + C.name() + " scored " + matchResults[2] + " points.");
 		}
 		int[] sortedOrder = new int[numPlayers];
 		for (int i=0; i<numPlayers; i++) {
@@ -245,161 +337,4 @@ public class ThreePrisonersDilemma {
 			sortedOrder[j+1] = i;
 		}
 		return sortedOrder;
-	} // end of runTournament()
-	
-	class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
-
-		int r;
-		int[] myHist, opp1Hist, opp2Hist;
-		int myScore = 0, opp1Score = 0, opp2Score = 0;
-		int opp1Coop = 0, opp2Coop = 0;
-
-		final double LENIENT_THRESHOLD = 0.705;
-		final double STRICT_THRESHOLD = 0.750;
-
-		int[][][] payoff = {
-			{{6, 3}, {3, 0}},
-			{{8, 5}, {5, 2}}
-		};
-
-		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
-
-			if (n == 0) return 0;
-
-			this.r        = n - 1;
-			this.myHist   = myHistory;
-			this.opp1Hist = oppHistory1;
-			this.opp2Hist = oppHistory2;
-
-			int myLA   = myHistory[r];
-			int opp1LA = oppHistory1[r];
-			int opp2LA = oppHistory2[r];
-
-			this.myScore   += payoff[myLA][opp1LA][opp2LA];
-			this.opp1Score += payoff[opp1LA][opp2LA][myLA];
-			this.opp2Score += payoff[opp2LA][opp1LA][myLA];
-
-			opp1Coop += getOppAction(opp1Hist[r]);
-			opp2Coop += getOppAction(opp2Hist[r]);
-
-			double opp1CoopProb = (double) opp1Coop / opp1Hist.length;
-			double opp2CoopProb = (double) opp2Coop / opp2Hist.length;
-
-			// Rule 1a: if either opponent never cooperated after 5 rounds — defect
-			if (n > 5 && (opp1Coop == 0 || opp2Coop == 0)) return 1;
-			// Rule 1b: after 5 rounds, if both cooperate less than 50% — defect
-			if ((n > 5)
-					&& (opp1CoopProb < STRICT_THRESHOLD)
-					&& (opp2CoopProb < STRICT_THRESHOLD)) {
-				return applyNoise(1, 99);
-			}
-
-			// Rule 2: both cooperated last round and have cooperative histories — cooperate
-			if ((opp1LA + opp2LA == 0)
-					&& (opp1CoopProb > LENIENT_THRESHOLD)
-					&& (opp2CoopProb > LENIENT_THRESHOLD)) {
-				return applyNoise(0, 99);
-			}
-
-			// Rule 3: SoreLoser — cooperate if winning or tied, defect if losing
-			if (myScore >= opp1Score && myScore >= opp2Score) return 0;
-			return 1;
-		}
-
-		private int applyNoise(int intendedAction, int pct) {
-			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
-				put(intendedAction, pct);
-				put(getOppAction(intendedAction), 1 - pct);
-			}};
-			LinkedList<Integer> list = new LinkedList<>();
-			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
-				for (int i = 0; i < entry.getValue(); i++) list.add(entry.getKey());
-			}
-			Collections.shuffle(list);
-			return list.pop();
-		}
-
-		private int getOppAction(int action) {
-			if (action == 1) return 0;
-			return 1;
-		}
-	}
-
-	class Compare_Player extends Player {
-
-		int[][][] payoff = {
-				{{6, 3},
-				{3, 0}},
-				{{8, 5},
-				{5, 2}}};
-
-		int r;
-		int[] myHist, opp1Hist, opp2Hist;
-		int myScore=0, opp1Score=0, opp2Score=0;
-		int opponent1Coop = 0; int opponent2Coop = 0;
-
-		final double LENIENT_THRESHOLD = 0.705;
-		final double STRICT_THRESHOLD = 0.750;
-
-		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
-			if (n==0) return 0;
-
-			this.r = n - 1;
-			this.myHist = myHistory;
-			this.opp1Hist = oppHistory1;
-			this.opp2Hist = oppHistory2;
-
-			int myLA = myHistory[r];
-			int opp1LA = oppHistory1[r];
-			int opp2LA = oppHistory2[r];
-
-			this.myScore += payoff[myLA][opp1LA][opp2LA];
-			this.opp1Score += payoff[opp1LA][opp2LA][myLA];
-			this.opp2Score += payoff[opp2LA][opp1LA][myLA];
-
-			if (n>0) {
-				opponent1Coop += oppAction(opp1Hist[r]);
-				opponent2Coop += oppAction(opp2Hist[r]);
-			}
-			double opponent1Coop_prob = opponent1Coop / opp1Hist.length;
-			double opponent2Coop_prob = opponent2Coop / opp2Hist.length;
-
-			if ((n>100) && (opponent1Coop_prob<STRICT_THRESHOLD && opponent2Coop_prob<STRICT_THRESHOLD)) {
-				return actionWithNoise(1, 99);
-			}
-
-			if ((opp1LA+opp2LA ==0)&&(opponent1Coop_prob>LENIENT_THRESHOLD && opponent2Coop_prob>LENIENT_THRESHOLD)) {
-				return actionWithNoise(0, 99);
-			} else {
-				return SoreLoser();
-			}
-		}
-
-		private int actionWithNoise(int intendedAction, int percent_chance_for_intended_action) {
-			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
-				put(intendedAction, percent_chance_for_intended_action);
-				put(oppAction(intendedAction), 1-percent_chance_for_intended_action);
-			}};
-			LinkedList<Integer> list = new LinkedList<>();
-			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
-				for (int i = 0; i < entry.getValue(); i++) {
-					list.add(entry.getKey());
-				}
-			}
-			Collections.shuffle(list);
-			return list.pop();
-		}
-
-		private int SoreLoser() {
-			if (myScore>=opp1Score && myScore>=opp2Score) return 0;
-			return 1;
-		}
-
-		private int oppAction(int action) {
-			if (action == 1) return 0;
-			return 1;
-		}
-	}
-
-} // end of class PrisonersDilemma
-
+	} // end of runTo
