@@ -167,7 +167,7 @@ public class ThreePrisonersDilemma {
 	 (strategies) in between matches. When you add your own strategy,
 	 you will need to add a new entry to makePlayer, and change numPlayers.*/
 	
-	int numPlayers = 8;
+	int numPlayers = 11;
 	Player makePlayer(int which) {
 		switch (which) {
 		case 0: return new NicePlayer();
@@ -178,6 +178,9 @@ public class ThreePrisonersDilemma {
 		case 5: return new T4TPlayer();
 		case 6: return new BinMuhammadTaufiq_Hudzaifah_Player();
 		case 7: return new Compare_Player();
+		case 8: return new Nice2();
+		case 9: return new Nasty2();
+		case 10: return new EncourageCoop2();
 		}
 		throw new RuntimeException("Bad argument passed to makePlayer");
 	}
@@ -249,13 +252,8 @@ public class ThreePrisonersDilemma {
 	
 	class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
 
-		int r;
-		int[] myHist, opp1Hist, opp2Hist;
 		int myScore = 0, opp1Score = 0, opp2Score = 0;
-		int opp1Coop = 0, opp2Coop = 0;
-
-		final double LENIENT_THRESHOLD = 0.705;
-		final double STRICT_THRESHOLD = 0.750;
+		int opp1Def = 0, opp2Def = 0;
 
 		int[][][] payoff = {
 			{{6, 3}, {3, 0}},
@@ -263,65 +261,32 @@ public class ThreePrisonersDilemma {
 		};
 
 		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
-
 			if (n == 0) return 0;
 
-			this.r        = n - 1;
-			this.myHist   = myHistory;
-			this.opp1Hist = oppHistory1;
-			this.opp2Hist = oppHistory2;
-
-			int myLA   = myHistory[r];
+			int r = n - 1;
 			int opp1LA = oppHistory1[r];
 			int opp2LA = oppHistory2[r];
 
-			this.myScore   += payoff[myLA][opp1LA][opp2LA];
-			this.opp1Score += payoff[opp1LA][opp2LA][myLA];
-			this.opp2Score += payoff[opp2LA][opp1LA][myLA];
+			// Track scores
+			myScore   += payoff[myHistory[r]][opp1LA][opp2LA];
+			opp1Score += payoff[opp1LA][opp2LA][myHistory[r]];
+			opp2Score += payoff[opp2LA][myHistory[r]][opp1LA];
 
-			opp1Coop += getOppAction(opp1Hist[r]);
-			opp2Coop += getOppAction(opp2Hist[r]);
+			// Track defection counts
+			opp1Def += opp1LA;
+			opp2Def += opp2LA;
 
-			double opp1CoopProb = (double) opp1Coop / opp1Hist.length;
-			double opp2CoopProb = (double) opp2Coop / opp2Hist.length;
+			double opp1DefRate = (double) opp1Def / n;
+			double opp2DefRate = (double) opp2Def / n;
 
-			// Rule 1a: if either opponent never cooperated after 5 rounds — defect
-			if (n > 5 && (opp1Coop == 0 || opp2Coop == 0)) return 1;
-			// Rule 1b: after 5 rounds, if both cooperate less than 50% — defect
-			if ((n > 5)
-					&& (opp1CoopProb < STRICT_THRESHOLD)
-					&& (opp2CoopProb < STRICT_THRESHOLD)) {
-				return applyNoise(1, 99);
-			}
+			// Punish confirmed defectors (defecting > 50% of the time)
+			if (opp1DefRate > 0.5 && opp2DefRate > 0.5) return 1;
 
-			// Rule 2: both cooperated last round and have cooperative histories — cooperate
-			if ((opp1LA + opp2LA == 0)
-					&& (opp1CoopProb > LENIENT_THRESHOLD)
-					&& (opp2CoopProb > LENIENT_THRESHOLD)) {
-				return applyNoise(0, 99);
-			}
+			// Tolerate a single defection — only retaliate if BOTH defected last round
+			if (opp1LA == 1 && opp2LA == 1) return 1;
 
-			// Rule 3: SoreLoser — cooperate if winning or tied, defect if losing
-			if (myScore >= opp1Score && myScore >= opp2Score) return 0;
-			return 1;
-		}
-
-		private int applyNoise(int intendedAction, int pct) {
-			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
-				put(intendedAction, pct);
-				put(getOppAction(intendedAction), 1 - pct);
-			}};
-			LinkedList<Integer> list = new LinkedList<>();
-			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
-				for (int i = 0; i < entry.getValue(); i++) list.add(entry.getKey());
-			}
-			Collections.shuffle(list);
-			return list.pop();
-		}
-
-		private int getOppAction(int action) {
-			if (action == 1) return 0;
-			return 1;
+			// Cooperate with anyone who is mostly cooperative
+			return 0;
 		}
 	}
 
@@ -378,7 +343,7 @@ public class ThreePrisonersDilemma {
 		private int actionWithNoise(int intendedAction, int percent_chance_for_intended_action) {
 			Map<Integer, Integer> map = new HashMap<Integer, Integer>() {{
 				put(intendedAction, percent_chance_for_intended_action);
-				put(oppAction(intendedAction), 1-percent_chance_for_intended_action);
+				put(oppAction(intendedAction), 100-percent_chance_for_intended_action);
 			}};
 			LinkedList<Integer> list = new LinkedList<>();
 			for (Map.Entry<Integer, Integer> entry : map.entrySet()) {
@@ -398,6 +363,67 @@ public class ThreePrisonersDilemma {
 		private int oppAction(int action) {
 			if (action == 1) return 0;
 			return 1;
+		}
+	}
+
+	class Nice2 extends Player {
+		int opp1Def = 0, opp2Def = 0;
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n == 0) return 0;
+			opp1Def += oppHistory1[n-1];
+			opp2Def += oppHistory2[n-1];
+			double opp1DefRate = (double) opp1Def / n;
+			double opp2DefRate = (double) opp2Def / n;
+			// Punish confirmed defectors
+			if (opp1DefRate > 0.5 && opp2DefRate > 0.5) return 1;
+			// Retaliate only if BOTH defected last round
+			if (oppHistory1[n-1] == 1 && oppHistory2[n-1] == 1) return 1;
+			// Otherwise cooperate
+			return 0;
+		}
+	}
+
+	class Nasty2 extends Player {
+		int intPlayer1Defects = 0, intPlayer2Defects = 0;
+		int intRoundRetailate = -1;
+		int intObservationRound = 1, intGrudgeRound = 3;
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n > 0) { intPlayer1Defects += oppHistory1[n-1]; intPlayer2Defects += oppHistory2[n-1]; }
+			if (n < intObservationRound) return 0;
+			if (intRoundRetailate < -1) { intRoundRetailate += 1; intPlayer1Defects = 0; intPlayer2Defects = 0; return 0; }
+			if (intRoundRetailate > -1 && n == intRoundRetailate + intGrudgeRound + 1) {
+				int p1Coop = 0, p2Coop = 0;
+				for (int c = 0; c < intGrudgeRound; c++) {
+					p1Coop += oppHistory1[n-1-c] == 0 ? 1 : 0;
+					p2Coop += oppHistory2[n-1-c] == 0 ? 1 : 0;
+				}
+				if (p1Coop > 1 && p2Coop > 1 && (oppHistory1[n-1]+oppHistory2[n-1]) == 0) {
+					intRoundRetailate = -2; intPlayer1Defects = 0; intPlayer2Defects = 0; return 0;
+				} else { intRoundRetailate = n; return 1; }
+			}
+			if (intPlayer1Defects + intPlayer2Defects > 0) { intRoundRetailate = n; return 1; }
+			return 0;
+		}
+	}
+
+	class EncourageCoop2 extends Player {
+		int myScore = 0, opp1Score = 0, opp2Score = 0;
+		int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
+			if (n < 2) return 0;
+			if (oppHistory1[n-1]==1 && oppHistory1[n-2]==1 && oppHistory2[n-1]==1 && oppHistory2[n-2]==1) return 1;
+			if (isNasty(n, oppHistory1) || isNasty(n, oppHistory2)) return 1;
+			if (isRandom(n, oppHistory1) || isRandom(n, oppHistory2)) return 1;
+			myScore += payoff[myHistory[n-1]][oppHistory1[n-1]][oppHistory2[n-1]];
+			opp1Score += payoff[oppHistory1[n-1]][oppHistory2[n-1]][myHistory[n-1]];
+			opp2Score += payoff[oppHistory2[n-1]][oppHistory1[n-1]][myHistory[n-1]];
+			if (myScore < opp1Score || myScore < opp2Score) return 1;
+			if (Math.random() < 0.5) return oppHistory1[n-1];
+			else return oppHistory2[n-1];
+		}
+		boolean isNasty(int n, int[] h) { for (int i=0; i<n; i++) if (h[i]==0) return false; return n>0; }
+		boolean isRandom(int n, int[] h) {
+			int s=0; for (int i=0; i<n; i++) s+=h[i];
+			return n>0 && Math.abs((double)s/n - 0.5) < 0.025;
 		}
 	}
 
