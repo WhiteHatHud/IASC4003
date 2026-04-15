@@ -337,4 +337,7 @@ public class ThreePrisonersDilemma {
 			sortedOrder[j+1] = i;
 		}
 		return sortedOrder;
-	} // end of runTo
+	} // end of runTournament()
+	
+} // end of class PrisonersDilemma
+

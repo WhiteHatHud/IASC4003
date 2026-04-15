@@ -1,12 +1,17 @@
+package com.cz4046;
+
 class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
 
-	int myScore = 0, opp1Score = 0, opp2Score = 0;
-	int opp1Def = 0, opp2Def = 0;
+	final String NAME = "BinMuhammadTaufiq_Hudzaifah";
+	final String MATRIC_NO = "U2320600F";
 
 	int[][][] payoff = {
 		{{6, 3}, {3, 0}},
 		{{8, 5}, {5, 2}}
 	};
+
+	int myScore = 0, opp1Score = 0, opp2Score = 0;
+	int opp1Def = 0, opp2Def = 0;
 
 	int selectAction(int n, int[] myHistory, int[] oppHistory1, int[] oppHistory2) {
 		if (n == 0) return 0;
@@ -33,5 +38,10 @@ class BinMuhammadTaufiq_Hudzaifah_Player extends Player {
 
 		// Rule 3: Otherwise cooperate
 		return 0;
+	}
+
+	private int oppAction(int action) {
+		if (action == 1) return 0;
+		return 1;
 	}
 }
